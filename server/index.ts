@@ -1,6 +1,9 @@
-import 'dotenv/config';
+import path from 'node:path';
+import dotenv from 'dotenv';
 import express from 'express';
 import cors from 'cors';
+
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 app.use(cors({ origin: ['http://localhost:3000', 'http://127.0.0.1:3000'], methods: ['GET', 'POST'] }));
