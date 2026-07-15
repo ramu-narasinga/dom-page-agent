@@ -20,13 +20,38 @@ export class PageController {
     return false;
   }
 
+  private getLabelText(el: Element): string {
+    const ariaLabel = el.getAttribute('aria-label');
+    if (ariaLabel) return ariaLabel.trim();
+    const id = el.getAttribute('id');
+    if (id) {
+      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      if (label?.textContent) return label.textContent.trim();
+    }
+    const wrappingLabel = el.closest('label');
+    if (wrappingLabel?.textContent) return wrappingLabel.textContent.trim();
+    return '';
+  }
+
   private buildInteractiveMap(): void {
     this.interactiveElements = [];
     let idx = 0;
     for (const el of Array.from(document.querySelectorAll('*'))) {
       if (this.isInteractive(el) && this.isVisible(el)) {
-        const text = (el.textContent || (el as HTMLInputElement).placeholder || '').trim().slice(0, 80);
-        this.interactiveElements.push({ index: idx, tag: el.tagName.toLowerCase(), text, el });
+        const tag = el.tagName.toLowerCase();
+        let text: string;
+        if (tag === 'select') {
+          text = Array.from((el as HTMLSelectElement).options)
+            .map(o => o.textContent?.trim())
+            .filter(Boolean)
+            .join(' / ')
+            .slice(0, 120);
+        } else {
+          const label = this.getLabelText(el);
+          const fallback = (el.textContent || (el as HTMLInputElement).placeholder || '').trim();
+          text = (label || fallback).slice(0, 80);
+        }
+        this.interactiveElements.push({ index: idx, tag, text, el });
         idx++;
       }
     }
@@ -47,8 +72,23 @@ export class PageController {
 
   async inputText(index: number, text: string): Promise<ToolResult> {
     const item = this.interactiveElements[index];
-    if (!item || !['input', 'textarea'].includes(item.tag)) {
-      return { success: false, message: `No input/textarea at index ${index}` };
+    if (!item) return { success: false, message: `No interactive element at index ${index}` };
+
+    if (item.tag === 'select') {
+      const selectEl = item.el as HTMLSelectElement;
+      const match = Array.from(selectEl.options).find(
+        opt =>
+          opt.value.toLowerCase() === text.toLowerCase() ||
+          opt.textContent?.trim().toLowerCase() === text.toLowerCase()
+      );
+      if (!match) return { success: false, message: `No option matching "${text}" in select [${index}]` };
+      selectEl.value = match.value;
+      selectEl.dispatchEvent(new Event('change', { bubbles: true }));
+      return { success: true, message: `Selected "${match.textContent?.trim()}" in [${index}]` };
+    }
+
+    if (!['input', 'textarea'].includes(item.tag)) {
+      return { success: false, message: `No input/textarea/select at index ${index}` };
     }
     const el = item.el as HTMLInputElement;
     el.focus();

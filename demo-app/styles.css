@@ -1,0 +1,96 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: Georgia, 'Times New Roman', serif;
+  background: #f2f1ec;
+  color: #1a1a1a;
+}
+
+.form-page {
+  max-width: 640px;
+  margin: 40px auto;
+  padding: 32px 40px;
+  background: #ffffff;
+  border: 1px solid #ccc;
+}
+
+h1 {
+  font-size: 22px;
+  margin: 0 0 4px;
+}
+
+.subtitle {
+  margin: 0 0 24px;
+  color: #555;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+fieldset {
+  border: 1px solid #999;
+  margin: 0 0 24px;
+  padding: 16px 20px 20px;
+}
+
+legend {
+  font-weight: bold;
+  font-size: 14px;
+  padding: 0 8px;
+}
+
+label {
+  display: block;
+  font-size: 13px;
+  margin: 12px 0 4px;
+}
+
+input[type='text'],
+input[type='email'],
+input[type='tel'],
+input[type='number'],
+input[type='date'],
+select {
+  width: 100%;
+  padding: 6px 8px;
+  font-size: 14px;
+  border: 1px solid #888;
+  font-family: inherit;
+}
+
+.checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.checkbox-row label {
+  margin: 0;
+}
+
+.conditional-field {
+  margin-top: 4px;
+}
+
+button {
+  margin-top: 16px;
+  padding: 10px 20px;
+  font-size: 14px;
+  background: #2b2b2b;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #444;
+}
+
+.result {
+  font-weight: bold;
+  color: #146c2e;
+}

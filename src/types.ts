@@ -49,3 +49,34 @@ export interface TrustReport {
   independentVerification: DomCheckResult;
   verdict: 'VERIFIED' | 'NEEDS_REVIEW';
 }
+
+export interface PanelHistoryStep {
+  type: 'step';
+  stepIndex: number;
+  reflection?: {
+    evaluation_previous_goal?: string;
+    memory?: string;
+    next_goal?: string;
+  };
+  action?: {
+    name: string;
+    input: unknown;
+    output: string;
+  };
+}
+
+export type AgentStatus = 'idle' | 'running' | 'completed' | 'error' | 'stopped';
+
+export interface AgentActivity {
+  type: 'thinking' | 'executing' | 'executed' | 'error';
+  [key: string]: unknown;
+}
+
+export interface PanelAgentAdapter extends EventTarget {
+  readonly status: AgentStatus;
+  readonly history: readonly PanelHistoryStep[];
+  readonly task: string;
+  execute(task: string): Promise<AgentStepResult>;
+  stop(): Promise<void>;
+  dispose(): void;
+}
