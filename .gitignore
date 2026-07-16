@@ -2,5 +2,8 @@ node_modules/
 dist/
 .env
 server/.env
+agent-server/.env
+agent-server/.venv/
+agent-server/__pycache__/
 *.log
 .DS_Store
