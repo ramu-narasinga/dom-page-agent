@@ -24,6 +24,7 @@ export class Panel {
     this.#agent.addEventListener('dispose', () => this.dispose());
 
     this.#setupEventListeners();
+    this.#setupDrag();
     this.#handleStatusChange();
   }
 
@@ -37,7 +38,7 @@ export class Panel {
       font-family: system-ui, sans-serif; z-index: 2147483647; overflow: hidden;
     `;
     wrapper.innerHTML = `
-      <div style="padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+      <div data-drag-handle style="padding: 10px 12px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center; cursor: move; user-select: none;">
         <span style="font-weight: 600; font-size: 13px;" data-status-text>IDLE</span>
         <button data-stop-btn style="display:none; background:#c0392b; color:#fff; border:none; border-radius:4px; padding:4px 10px; font-size:12px; cursor:pointer;">Stop</button>
       </div>
@@ -58,6 +59,44 @@ export class Panel {
       if (e.key === 'Enter' && this.#taskInput.value.trim()) this.#submitTask();
     });
     this.#stopBtn.addEventListener('click', () => this.#agent.stop());
+  }
+
+  #setupDrag(): void {
+    const handle = this.#wrapper.querySelector('[data-drag-handle]') as HTMLElement;
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startLeft = 0;
+    let startTop = 0;
+
+    handle.addEventListener('mousedown', (e: MouseEvent) => {
+      // Freeze the current on-screen position into explicit top/left before dragging,
+      // since the panel starts positioned via bottom+transform, not top/left.
+      const rect = this.#wrapper.getBoundingClientRect();
+      this.#wrapper.style.left = `${rect.left}px`;
+      this.#wrapper.style.top = `${rect.top}px`;
+      this.#wrapper.style.bottom = 'auto';
+      this.#wrapper.style.transform = 'none';
+
+      dragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+      startLeft = rect.left;
+      startTop = rect.top;
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!dragging) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      this.#wrapper.style.left = `${startLeft + dx}px`;
+      this.#wrapper.style.top = `${startTop + dy}px`;
+    });
+
+    window.addEventListener('mouseup', () => {
+      dragging = false;
+    });
   }
 
   #handleStatusChange(): void {

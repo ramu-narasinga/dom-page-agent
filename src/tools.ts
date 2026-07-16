@@ -20,7 +20,27 @@ export const AGENT_STEP_TOOL = {
         type: 'object',
         properties: {
           tool_name: { type: 'string', enum: ['click_element_by_index', 'input_text', 'scroll', 'done'] },
-          params: { type: 'object' },
+          params: {
+            type: 'object',
+            properties: {
+              index: {
+                type: 'number',
+                description: 'Required for click_element_by_index and input_text: the element index from <interactive_elements> to act on.',
+              },
+              text: {
+                type: 'string',
+                description: 'Required for input_text: the text to type, or the exact <select> option label to choose.',
+              },
+              down: {
+                type: 'boolean',
+                description: 'For scroll: true to scroll down, false to scroll up. Defaults to true if omitted.',
+              },
+              success: {
+                type: 'boolean',
+                description: 'For done: whether the task was completed successfully.',
+              },
+            },
+          },
         },
         required: ['tool_name', 'params'],
       },

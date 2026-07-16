@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import operator
 import os
 import httpx
@@ -22,7 +23,27 @@ AGENT_STEP_TOOL = {
                 "type": "object",
                 "properties": {
                     "tool_name": {"type": "string", "enum": ["click_element_by_index", "input_text", "scroll", "done"]},
-                    "params": {"type": "object"},
+                    "params": {
+                        "type": "object",
+                        "properties": {
+                            "index": {
+                                "type": "number",
+                                "description": "Required for click_element_by_index and input_text: the element index from <interactive_elements> to act on.",
+                            },
+                            "text": {
+                                "type": "string",
+                                "description": "Required for input_text: the text to type, or the exact <select> option label to choose.",
+                            },
+                            "down": {
+                                "type": "boolean",
+                                "description": "For scroll: true to scroll down, false to scroll up. Defaults to true if omitted.",
+                            },
+                            "success": {
+                                "type": "boolean",
+                                "description": "For done: whether the task was completed successfully.",
+                            },
+                        },
+                    },
                 },
                 "required": ["tool_name", "params"],
             },
@@ -72,7 +93,7 @@ def build_graph(bridge: BrowserBridge, max_steps: int):
                     "anthropic-version": "2023-06-01",
                 },
                 json={
-                    "model": "claude-haiku-4-5",
+                    "model": "claude-sonnet-5",
                     "max_tokens": 2048,
                     "system": SYSTEM_PROMPT,
                     "messages": [{"role": "user", "content": prompt}],
@@ -89,6 +110,13 @@ def build_graph(bridge: BrowserBridge, max_steps: int):
             raise RuntimeError(f"No tool_use in response (stop_reason: {data.get('stop_reason')})")
         decision = tool_use["input"]
         action = decision["action"]
+        if isinstance(action, str):
+            # Some models (observed with claude-haiku-4-5) occasionally stringify a nested
+            # object field instead of honoring the schema's object type — parse defensively
+            # rather than crashing on `action["tool_name"]` a few lines down.
+            action = json.loads(action)
+        if isinstance(action.get("params"), str):
+            action["params"] = json.loads(action["params"])
 
         if action["tool_name"] == "done":
             entry = {

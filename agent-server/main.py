@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import traceback
 from dotenv import load_dotenv
 load_dotenv()  # loads agent-server/.env before graph.py reads ANTHROPIC_API_KEY at import time
 
@@ -45,6 +46,7 @@ async def agent_ws(websocket: WebSocket):
                     {"type": "task_complete", "result": {"success": success, "message": message}}
                 )
         except Exception as err:
+            traceback.print_exc()  # full stack trace to the server console, not just str(err)
             await websocket.send_json({"type": "task_error", "message": str(err)})
 
     try:

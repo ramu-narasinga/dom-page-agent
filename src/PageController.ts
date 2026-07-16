@@ -33,6 +33,29 @@ export class PageController {
     return '';
   }
 
+  // Buttons/grouped controls have no <label for> mechanism, so a human visually reads
+  // a nearby heading ("Choose a date") to know what a group of similar-looking buttons
+  // means — the flat interactive-elements list strips that out entirely otherwise.
+  private getSectionContext(el: Element): string {
+    const fieldset = el.closest('fieldset');
+    if (fieldset) {
+      const legend = fieldset.querySelector(':scope > legend');
+      if (legend?.textContent) return legend.textContent.trim();
+    }
+    let container: Element | null = el.parentElement;
+    while (container && container !== document.body) {
+      let sibling = container.previousElementSibling;
+      while (sibling) {
+        if (/^H[1-6]$/.test(sibling.tagName) && sibling.textContent) {
+          return sibling.textContent.trim();
+        }
+        sibling = sibling.previousElementSibling;
+      }
+      container = container.parentElement;
+    }
+    return '';
+  }
+
   private buildInteractiveMap(): void {
     this.interactiveElements = [];
     let idx = 0;
@@ -50,6 +73,10 @@ export class PageController {
           const label = this.getLabelText(el);
           const fallback = (el.textContent || (el as HTMLInputElement).placeholder || '').trim();
           text = (label || fallback).slice(0, 80);
+        }
+        const context = this.getSectionContext(el);
+        if (context && !text.includes(context)) {
+          text = `${context} — ${text}`.slice(0, 140);
         }
         this.interactiveElements.push({ index: idx, tag, text, el });
         idx++;
