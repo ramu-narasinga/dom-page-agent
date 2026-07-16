@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Warehouse Inventory Manager</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, 'Times New Roman', serif;
+      background: #f2f1ec;
+      color: #1a1a1a;
+    }
+    .inventory-page {
+      max-width: 820px;
+      margin: 40px auto;
+      padding: 32px 40px;
+      background: #ffffff;
+      border: 1px solid #ccc;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .subtitle {
+      margin: 0 0 24px;
+      color: #555;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    label { display: block; font-size: 13px; margin: 0 0 4px; }
+    input[type='text'] {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 14px;
+      border: 1px solid #888;
+      font-family: inherit;
+      margin-bottom: 20px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #ddd; }
+    th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: #666; }
+    tr.hidden-row { display: none; }
+    .status-in-stock { color: #146c2e; }
+    .status-low-stock { color: #a67c00; }
+    .status-out-of-stock { color: #a30000; }
+    button.restock-btn {
+      padding: 4px 10px;
+      font-size: 12px;
+      background: #2b2b2b;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+    button.restock-btn:hover { background: #444; }
+  </style>
+</head>
+<body>
+  <main class="inventory-page">
+    <h1>Warehouse Inventory Manager</h1>
+    <p class="subtitle">Product Stock Overview</p>
+
+    <label for="searchInput">Search products</label>
+    <input type="text" id="searchInput" placeholder="Search by product name..." />
+
+    <table id="inventoryTable">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Product Name</th>
+          <th>Category</th>
+          <th>Quantity</th>
+          <th>Status</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="inventoryBody"></tbody>
+    </table>
+  </main>
+
+  <script>
+    const products = [
+      { sku: 'SKU-1001', name: 'Wireless Mouse', category: 'Electronics', qty: 3 },
+      { sku: 'SKU-1002', name: 'Mechanical Keyboard', category: 'Electronics', qty: 42 },
+      { sku: 'SKU-1003', name: 'USB-C Cable', category: 'Electronics', qty: 0 },
+      { sku: 'SKU-1004', name: 'Standing Desk', category: 'Furniture', qty: 8 },
+      { sku: 'SKU-1005', name: 'Office Chair', category: 'Furniture', qty: 15 },
+      { sku: 'SKU-1006', name: 'Desk Lamp', category: 'Furniture', qty: 2 },
+      { sku: 'SKU-1007', name: 'Notebook (Pack of 5)', category: 'Stationery', qty: 60 },
+      { sku: 'SKU-1008', name: 'Ballpoint Pens (Box)', category: 'Stationery', qty: 0 },
+      { sku: 'SKU-1009', name: 'Sticky Notes', category: 'Stationery', qty: 25 },
+      { sku: 'SKU-1010', name: 'External Monitor', category: 'Electronics', qty: 5 },
+      { sku: 'SKU-1011', name: 'Webcam', category: 'Electronics', qty: 1 },
+      { sku: 'SKU-1012', name: 'Wireless Keyboard', category: 'Electronics', qty: 12 },
+      { sku: 'SKU-1013', name: 'Filing Cabinet', category: 'Furniture', qty: 4 },
+      { sku: 'SKU-1014', name: 'Whiteboard Markers', category: 'Stationery', qty: 30 },
+      { sku: 'SKU-1015', name: 'Laptop Stand', category: 'Electronics', qty: 0 },
+      { sku: 'SKU-1016', name: 'Bookshelf', category: 'Furniture', qty: 6 },
+    ];
+
+    function statusFor(qty) {
+      if (qty === 0) return { label: 'Out of Stock', cls: 'status-out-of-stock' };
+      if (qty <= 5) return { label: 'Low Stock', cls: 'status-low-stock' };
+      return { label: 'In Stock', cls: 'status-in-stock' };
+    }
+
+    const tbody = document.getElementById('inventoryBody');
+
+    function render() {
+      tbody.innerHTML = '';
+      products.forEach((p, idx) => {
+        const status = statusFor(p.qty);
+        const tr = document.createElement('tr');
+        tr.dataset.name = p.name.toLowerCase();
+        tr.innerHTML = `
+          <td>${p.sku}</td>
+          <td>${p.name}</td>
+          <td>${p.category}</td>
+          <td class="qty-cell">${p.qty}</td>
+          <td class="${status.cls}">${status.label}</td>
+          <td><button type="button" class="restock-btn" data-idx="${idx}">Restock</button></td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      tbody.querySelectorAll('.restock-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number(btn.dataset.idx);
+          products[idx].qty = 100;
+          render();
+          applyFilter(document.getElementById('searchInput').value);
+        });
+      });
+    }
+
+    function applyFilter(query) {
+      const q = query.trim().toLowerCase();
+      tbody.querySelectorAll('tr').forEach(tr => {
+        tr.classList.toggle('hidden-row', q.length > 0 && !tr.dataset.name.includes(q));
+      });
+    }
+
+    document.getElementById('searchInput').addEventListener('input', (e) => {
+      applyFilter(e.target.value);
+    });
+
+    render();
+  </script>
+</body>
+</html>

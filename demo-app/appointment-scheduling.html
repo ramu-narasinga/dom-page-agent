@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>City Dental Clinic — Book an Appointment</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Georgia, 'Times New Roman', serif;
+      background: #f2f1ec;
+      color: #1a1a1a;
+    }
+    .wizard-page {
+      max-width: 640px;
+      margin: 40px auto;
+      padding: 32px 40px;
+      background: #ffffff;
+      border: 1px solid #ccc;
+    }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .subtitle {
+      margin: 0 0 24px;
+      color: #555;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .steps { display: flex; gap: 8px; margin-bottom: 24px; font-size: 12px; color: #999; }
+    .steps span.active { color: #146c2e; font-weight: bold; }
+    section.step { display: none; }
+    section.step.visible { display: block; }
+    h2 { font-size: 16px; margin: 0 0 16px; }
+    .option-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .option-btn {
+      padding: 10px 6px;
+      font-size: 13px;
+      border: 1px solid #888;
+      background: #fff;
+      cursor: pointer;
+    }
+    .option-btn.selected { background: #2b2b2b; color: #fff; }
+    .service-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+    label { display: block; font-size: 13px; margin: 12px 0 4px; }
+    input[type='text'], input[type='email'], input[type='tel'] {
+      width: 100%;
+      padding: 6px 8px;
+      font-size: 14px;
+      border: 1px solid #888;
+      font-family: inherit;
+    }
+    .nav-row { display: flex; justify-content: space-between; margin-top: 24px; }
+    button.nav-btn {
+      padding: 10px 20px;
+      font-size: 14px;
+      background: #2b2b2b;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+    }
+    button.nav-btn:hover { background: #444; }
+    .result { font-weight: bold; color: #146c2e; margin-top: 16px; }
+  </style>
+</head>
+<body>
+  <main class="wizard-page">
+    <h1>City Dental Clinic</h1>
+    <p class="subtitle">Book an Appointment</p>
+
+    <div class="steps">
+      <span id="stepLabel1" class="active">1. Service</span>
+      <span>&rarr;</span>
+      <span id="stepLabel2">2. Date &amp; Time</span>
+      <span>&rarr;</span>
+      <span id="stepLabel3">3. Your Details</span>
+    </div>
+
+    <section id="step1" class="step visible">
+      <h2>Choose a service</h2>
+      <div class="service-list">
+        <button type="button" class="option-btn" data-service="Cleaning">Cleaning</button>
+        <button type="button" class="option-btn" data-service="Checkup">Checkup</button>
+        <button type="button" class="option-btn" data-service="Whitening">Teeth Whitening</button>
+        <button type="button" class="option-btn" data-service="Extraction">Tooth Extraction</button>
+      </div>
+      <div class="nav-row">
+        <span></span>
+        <button type="button" class="nav-btn" id="toStep2">Next</button>
+      </div>
+    </section>
+
+    <section id="step2" class="step">
+      <h2>Choose a date</h2>
+      <div class="option-grid" id="dateGrid"></div>
+      <h2>Choose a time</h2>
+      <div class="option-grid" id="timeGrid"></div>
+      <div class="nav-row">
+        <button type="button" class="nav-btn" id="backTo1">Back</button>
+        <button type="button" class="nav-btn" id="toStep3">Next</button>
+      </div>
+    </section>
+
+    <section id="step3" class="step">
+      <h2>Your details</h2>
+      <label for="patientName">Full name</label>
+      <input type="text" id="patientName" name="patientName" />
+      <label for="patientEmail">Email</label>
+      <input type="email" id="patientEmail" name="patientEmail" />
+      <label for="patientPhone">Phone</label>
+      <input type="tel" id="patientPhone" name="patientPhone" />
+      <div class="nav-row">
+        <button type="button" class="nav-btn" id="backTo2">Back</button>
+        <button type="button" class="nav-btn" id="confirmBtn">Confirm Booking</button>
+      </div>
+      <p id="result" class="result"></p>
+    </section>
+  </main>
+
+  <script>
+    let selectedService = null;
+    let selectedDate = null;
+    let selectedTime = null;
+
+    function showStep(n) {
+      document.querySelectorAll('.step').forEach(el => el.classList.remove('visible'));
+      document.getElementById('step' + n).classList.add('visible');
+      document.querySelectorAll('.steps span.active').forEach(el => el.classList.remove('active'));
+      document.getElementById('stepLabel' + n).classList.add('active');
+    }
+
+    document.querySelectorAll('#step1 .option-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('#step1 .option-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedService = btn.dataset.service;
+      });
+    });
+
+    const dateGrid = document.getElementById('dateGrid');
+    const today = new Date();
+    for (let i = 1; i <= 12; i++) {
+      const d = new Date(today.getFullYear(), today.getMonth(), today.getDate() + i);
+      const label = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'option-btn';
+      btn.textContent = label;
+      btn.dataset.date = label;
+      btn.addEventListener('click', () => {
+        dateGrid.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedDate = label;
+      });
+      dateGrid.appendChild(btn);
+    }
+
+    const timeGrid = document.getElementById('timeGrid');
+    ['9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM', '11:00 AM', '1:00 PM', '1:30 PM', '2:00 PM'].forEach(t => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'option-btn';
+      btn.textContent = t;
+      btn.dataset.time = t;
+      btn.addEventListener('click', () => {
+        timeGrid.querySelectorAll('.option-btn').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+        selectedTime = t;
+      });
+      timeGrid.appendChild(btn);
+    });
+
+    document.getElementById('toStep2').addEventListener('click', () => showStep(2));
+    document.getElementById('backTo1').addEventListener('click', () => showStep(1));
+    document.getElementById('toStep3').addEventListener('click', () => showStep(3));
+    document.getElementById('backTo2').addEventListener('click', () => showStep(2));
+
+    document.getElementById('confirmBtn').addEventListener('click', () => {
+      const name = document.getElementById('patientName').value;
+      document.getElementById('result').textContent =
+        `Booked: ${selectedService || '(no service)'} for ${name || '(no name)'} on ${selectedDate || '(no date)'} at ${selectedTime || '(no time)'}.`;
+    });
+  </script>
+</body>
+</html>
