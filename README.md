@@ -1,6 +1,6 @@
 # dom-page-agent
 
-A from-scratch, simplified clone of [alibaba/page-agent](https://github.com/alibaba/page-agent) — an agent that lives inside a webpage, drives it via natural language using a text-based index of interactive elements (not screenshots), and **independently verifies** that what it claims to have done actually happened in the DOM. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open.
+A page agent that lives inside a webpage, drives it via natural language using a text-based index of interactive elements (not screenshots), and **independently verifies** that what it claims to have done actually happened in the DOM. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open.
 
 ## The real problem
 
