@@ -1,10 +1,6 @@
 import { PageController } from './PageController';
-import { LLM } from './LLM';
-import { PageAgentCore } from './PageAgentCore';
-import { Agent } from './Agent';
 import { Panel } from './Panel';
 import { WsLangGraphAgent } from './ws/WsLangGraphAgent';
-import { verifyDom, buildTrustReport } from './verify';
 
 const WS_URL = 'ws://localhost:8765/agent-ws';
 
@@ -17,12 +13,7 @@ if (!existing?.agent) {
 
 (window as any).MiniPageAgent = {
   PageController,
-  LLM,
-  PageAgentCore,
-  Agent,
   Panel,
   WsLangGraphAgent,
-  verifyDom,
-  buildTrustReport,
   agent,
 };

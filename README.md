@@ -1,49 +1,14 @@
 # dom-page-agent
 
-A page agent that lives inside a webpage, drives it via natural language using a text-based index of interactive elements (not screenshots), and **independently verifies** that what it claims to have done actually happened in the DOM. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open.
+A page agent that lives inside a webpage and drives it via natural language, using a text-based index of interactive elements instead of screenshots. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open. The multi-step agent loop is driven by **LangGraph** in a Python server, reached over a WebSocket bridge from the browser.
 
-## The real problem
+## The problem
 
-AI coding assistants can implement or change a UI feature and claim it works. Confirming that claim currently means manually opening the browser and clicking through it yourself, every time. This project is a **UI task verifier** that happens to work by driving the page like a user would: point it at any page, give it a natural-language instruction, and get back an independently-checked verdict — `VERIFIED` or `NEEDS_REVIEW` — instead of just trusting the agent's own word.
+Repetitive UI tasks — filling out long forms, working through a multi-step booking flow, searching a table and acting on one specific row — are tedious to do by hand, every single time. Existing automation approaches either hardcode brittle selectors per page (breaks the moment the page changes) or rely on screenshots and pixel coordinates (expensive, imprecise, and still brittle across screen sizes/zoom levels).
 
-Three demo pages (below) stand in for "features an AI just built," each exercising a different interaction shape: a long multi-field form, a multi-step wizard with grouped buttons, and a search-then-act table.
+This project is a general primitive instead: read *any* page as a small, LLM-friendly index of interactive elements, let a real multi-step agent loop reason over that index step by step (not a single "do this" API call), and act through the same handful of tools — click, type, scroll — regardless of what the page actually is. The three demo pages (below) are deliberately different shapes (a long form, a multi-step wizard, a search-then-act table) specifically to prove the same small primitive generalizes across all of them, rather than being tuned to one.
 
-## Two agent implementations, one shared UI
-
-This repo has **two structurally different agent backends**, both plugging into the *same* `Panel` widget through a shared `PanelAgentAdapter` contract — proof that the UI/agent decoupling is a real design choice, not decoration.
-
-| | `PageAgentCore` (plain loop) | `WsLangGraphAgent` (LangGraph + WebSocket bridge) |
-|---|---|---|
-| Where the loop lives | Browser (`src/PageAgentCore.ts`) | Python server (`agent-server/graph.py`), driven by LangGraph |
-| LLM call path | Browser → Node proxy (`server/`) → Anthropic | Python server → Anthropic directly |
-| API key location | `server/.env` only | `agent-server/.env` (a deliberate second copy — see Tradeoffs) |
-| Default on this branch's bookmarklet | Available via `MiniPageAgent.Agent` | **Auto-initialized** (`src/index.ts`) |
-| Why it exists | The actual engineering solution — no more than this problem needs | Framework-breadth demonstration — LangGraph genuinely owns the multi-step loop here, not just one call |
-
-## Architecture — plain loop
-
-```
-┌──────────────────┐        ┌──────────────────┐        ┌────────────────────┐
-│  demo-app/        │  DOM   │  src/ (bundle)    │ fetch  │  server/ (proxy)    │
-│  the target page  │◄──────►│  Agent + Panel    │───────►│  holds ANTHROPIC_   │
-│  :3000            │        │  PageController   │        │  API_KEY, forwards  │
-│                    │        │  LLM / tools      │        │  to Anthropic       │
-└──────────────────┘        └──────────────────┘        └────────────────────┘
-                                                                    │
-                                                                    ▼
-                                                          api.anthropic.com
-```
-
-- **`src/PageController.ts`** — indexes visible, interactive DOM elements only (an interactivity filter + a visibility filter), resolves each element's description via `aria-label` → `label[for]` → wrapping `<label>` → nearest section heading/`<legend>` fallback (buttons in a grid have no `<label for>` mechanism — the heading fallback exists specifically for that), exposes `click`/`inputText` (including `<select>` matching)/`scroll`.
-- **`src/tools.ts`** — a tool dispatch table plus `AGENT_STEP_TOOL`: a schema that (a) forces the model to reflect (`evaluation_previous_goal`, `memory`, `next_goal`) before every action, and (b) explicitly declares `params`'s sub-fields (`index`, `text`, `down`, `success`) with descriptions, rather than leaving the model to infer the shape from prose alone.
-- **`src/LLM.ts`** — calls the local proxy, never Anthropic directly. Forwards an `AbortSignal` so a run can be cancelled mid-flight. Throws a descriptive error (including `stop_reason`) if a response has no `tool_use` block, instead of crashing on `undefined.input`.
-- **`src/PageAgentCore.ts`** — the bounded step loop. An `EventTarget` that fires `statuschange` / `historychange` / `activity` events and implements `PanelAgentAdapter`, so the UI never reaches into agent internals.
-- **`src/Panel.ts`** — the bottom-center, **draggable** UI widget: status line, live history feed, task input, Stop button. Talks to the agent only through `PanelAgentAdapter`.
-- **`src/Agent.ts`** — `PageAgentCore` + auto-constructed, auto-shown `Panel`.
-- **`src/verify.ts`** — `verifyDom` independently re-reads the actual DOM after the agent claims success; `buildTrustReport` only says `VERIFIED` when the agent's self-report *and* the independent DOM check agree. **This is the actual differentiator.**
-- **`server/index.ts`** — a thin Express passthrough. Holds `ANTHROPIC_API_KEY` server-side; the browser never sees it, never sends `anthropic-dangerous-direct-browser-access`.
-
-## Architecture — LangGraph + WebSocket bridge (this branch)
+## Architecture
 
 ```
 ┌──────────────────┐  DOM   ┌─────────────────────┐  WebSocket   ┌───────────────────────┐
@@ -60,10 +25,14 @@ This repo has **two structurally different agent backends**, both plugging into 
 
 The DOM actions (click/type/scroll) can only happen in the browser, so for LangGraph to genuinely *own* the multi-step loop (not just decide one action per HTTP call), the graph node reaches back into the browser over a live WebSocket connection every time it needs the current DOM state or a tool executed, and awaits that response before continuing.
 
-- **`agent-server/bridge.py`** — `BrowserBridge`: correlates outgoing requests (`get_browser_state`/`execute_tool`) to the browser with their eventual responses via `request_id`-keyed `asyncio.Future`s; `stop_event` for cancellation.
-- **`agent-server/graph.py`** — the LangGraph `StateGraph`: one node (`agent_step`) doing exactly what the plain loop's body does per iteration (get state → prompt → call Anthropic → act), with a conditional edge back to itself until `done`/`stopped`/`max_steps`. Calls Anthropic directly via `httpx` (own `ANTHROPIC_API_KEY`). Defensively `json.loads()`s the `action`/`params` fields if a model returns them as strings instead of nested objects (observed with `claude-haiku-4-5`).
-- **`agent-server/main.py`** — the FastAPI WebSocket endpoint. Runs the graph as a **separate `asyncio.create_task`**, never awaited inline in the same loop that reads incoming messages — see Known limitations/CLAUDE.md for why this one detail is load-bearing. Rejects connections whose `Origin` header isn't `http://localhost:3000`.
-- **`src/ws/WsLangGraphAgent.ts`** — the browser-side `PanelAgentAdapter` implementation: connects to the Python server, sends one `start_task`, then just answers whatever the server asks for while relaying `step_update` messages into `history` for `Panel` to render live.
+- **`src/PageController.ts`** — indexes visible, interactive DOM elements only (an interactivity filter + a visibility filter), resolves each element's description via `aria-label` → `label[for]` → wrapping `<label>` → nearest section heading/`<legend>` fallback (buttons in a grid have no `<label for>` mechanism — the heading fallback exists specifically for that), exposes `click`/`inputText` (including `<select>` matching)/`scroll`.
+- **`src/tools.ts`** — `TOOLS`, the tool dispatch table (`click_element_by_index`/`input_text`/`scroll`) that `WsLangGraphAgent` calls when the Python server asks it to execute a tool.
+- **`src/types.ts`** — shared shapes, notably `PanelAgentAdapter`: the contract that decouples `Panel` from any specific agent implementation.
+- **`src/Panel.ts`** — the bottom-center, **draggable** UI widget: status line, live history feed, task input, Stop button. Talks to the agent only through `PanelAgentAdapter` — never reaches into `PageController` or anything WebSocket-specific directly.
+- **`src/ws/WsLangGraphAgent.ts`** — the browser-side `PanelAgentAdapter` implementation: connects to the Python server, sends one `start_task`, then just answers whatever the server asks for (`get_browser_state`/`execute_tool`) while relaying `step_update` messages into `history` for `Panel` to render live.
+- **`agent-server/bridge.py`** — `BrowserBridge`: correlates outgoing requests to the browser (`get_browser_state`/`execute_tool`) with their eventual responses via `request_id`-keyed `asyncio.Future`s; `stop_event` for cancellation.
+- **`agent-server/graph.py`** — the LangGraph `StateGraph`: one node (`agent_step`) doing get-state → prompt → call Anthropic → act, with a conditional edge back to itself until `done`/`stopped`/`max_steps`. Calls Anthropic directly via `httpx` (own `ANTHROPIC_API_KEY`). Defensively `json.loads()`s/`.get()`s model output fields that occasionally come back as strings or missing entirely instead of matching the declared schema (observed with `claude-haiku-4-5`).
+- **`agent-server/main.py`** — the FastAPI WebSocket endpoint. Runs the graph as a **separate `asyncio.create_task`**, never awaited inline in the same loop that reads incoming messages (see Known limitations for why this one detail is load-bearing). Rejects connections whose `Origin` header isn't in `ALLOWED_ORIGIN` (env-configurable, comma-separated, defaults to `http://localhost:3000`).
 
 ## Demo pages (`demo-app/`)
 
@@ -71,51 +40,30 @@ The DOM actions (click/type/scroll) can only happen in the browser, so for LangG
 - **`appointment-scheduling.html`** — 3-step wizard (service → date/time grid → contact details), no page reload. Tests: multi-step section visibility, disambiguating many similar-looking buttons via section-heading context.
 - **`inventory-search.html`** — 16-product searchable table with per-row Restock buttons. Tests: the "index list rebuilt fresh every step" design — filtered-out rows must vanish from the agent's element list, live proof that `PageController` never uses a stale index.
 
-## Quickstart — plain loop (3 terminals)
+## Quickstart (3 terminals)
 
 ```bash
 # terminal 1
-npm run proxy          # :8787, requires server/.env with ANTHROPIC_API_KEY
-
-# terminal 2
 npm run bundle-host     # :8081
 
-# terminal 3
-npm run demo            # :3000
-```
-1. `cp server/.env.example server/.env` and paste in a real `ANTHROPIC_API_KEY`.
-2. Add the bookmarklet from [docs/bookmarklet.md](docs/bookmarklet.md).
-3. Open `http://localhost:3000` (or any of the 3 demo pages), click the bookmarklet.
-4. Console: `new MiniPageAgent.Agent(new MiniPageAgent.PageController(), new MiniPageAgent.LLM('http://localhost:8787'), 30)` — the plain-loop agent isn't the auto-init default on this branch, so construct it explicitly to compare against the LangGraph path.
-
-## Quickstart — LangGraph + WebSocket bridge (4 terminals, this branch's default)
-
-```bash
-# terminal 1
-npm run proxy               # :8787 — not used by the WS path itself, but the demo/bundle scripts assume it's available
-
 # terminal 2
-npm run bundle-host          # :8081
+npm run demo             # :3000
 
-# terminal 3
-npm run demo                 # :3000
-
-# terminal 4 (agent-server/, venv active, .env filled in)
+# terminal 3 (agent-server/, venv active, .env filled in)
 uvicorn main:app --port 8765 --ws wsproto
 ```
-1. `cp agent-server/.env.example agent-server/.env` and paste in a real `ANTHROPIC_API_KEY` (separate copy — see Tradeoffs).
+1. `cp agent-server/.env.example agent-server/.env` and paste in a real `ANTHROPIC_API_KEY`.
 2. The `--ws wsproto` flag is required, not optional — see Known limitations.
-3. Open any demo page, click the bookmarklet — the panel appears bottom-center **automatically**, no console commands needed.
-4. Type a task, press Enter. Watch Terminal 4 for LangGraph's step-by-step activity.
-5. Spot-check independently: `MiniPageAgent.verifyDom('Jane Doe', '#fullName')` (check several fields, not just one).
+3. Add the bookmarklet from [docs/bookmarklet.md](docs/bookmarklet.md).
+4. Open any demo page, click the bookmarklet — the panel appears bottom-center **automatically**, no console commands needed.
+5. Type a task, press Enter. Watch Terminal 3 for LangGraph's step-by-step activity, and the demo page for the actual DOM changes as they happen.
 
 ## Project layout
 
 ```
-src/                 browser bundle: PageController, tools, LLM, PageAgentCore, Panel, Agent, verify, index
+src/                 browser bundle: PageController, tools, Panel, index
 src/ws/               WsLangGraphAgent.ts — the WebSocket-bridge agent implementation
-server/               Express proxy holding the Anthropic key (plain-loop path)
-agent-server/          FastAPI + LangGraph server (bridge.py, graph.py, main.py) — WS-bridge path
+agent-server/          FastAPI + LangGraph server (bridge.py, graph.py, main.py)
 demo-app/              3 demo pages
 docs/                 bookmarklet snippet + usage
 dist/                 esbuild output (gitignored, regenerate with `npm run build`)
@@ -123,27 +71,26 @@ dist/                 esbuild output (gitignored, regenerate with `npm run build
 
 ## Known limitations
 
+- **No independent verification layer.** The agent's `done` report (`success`/`message`) is a self-report — nothing automatically re-checks the DOM against it. An earlier version of this project included a `verify.ts` (`verifyDom`/`buildTrustReport`) that was never actually wired into the automated loop — only reachable manually via console — and was removed rather than kept as an unused, misleading appendage. If this needs to exist, it should check the agent's own recorded actions against live DOM state (not ask the agent to grade itself), not just be resurrected as decoration.
 - Single-page form only — no true multi-step *page* navigation (the bookmarklet-injected script doesn't survive a page load). Multi-step *sections within one page* (the appointment wizard) work fine.
-- Proxy/WS CORS are hardcoded localhost-only allow-lists.
+- WS `Origin` allowlist is env-configurable but still a manual allowlist, not a general CORS policy.
 - No automated test suite — `npm run typecheck` is the only pre-commit gate; correctness is demonstrated by manual, reproducible browser runs.
-- `stop()` only cancels the in-flight LLM network call, not an in-progress DOM tool action (those are near-instant, so there's nothing meaningful to abort there).
+- `Stop` only cancels the in-flight LLM call, not an in-progress DOM tool action (those are near-instant, so there's nothing meaningful to abort there).
 - **The WebSocket server must run with `uvicorn ... --ws wsproto`.** The default legacy `websockets` implementation raises `SecurityError: line too long` on a real Chrome connection once the browser's accumulated `Cookie` header for `localhost` exceeds ~8KB (cookies aren't segmented by port, so this fills up fast across many local dev projects). A raw test client without cookies won't trigger this — it only shows up against a real browser.
 - **`agent-server/main.py` must run the graph as a separate task, never awaited inline** in the loop that reads incoming WebSocket messages — doing so deadlocks after one exchange, because `bridge.request()`'s pending future can only resolve once that same loop reads the next message.
-- `AGENT_STEP_TOOL`'s schema is duplicated (TypeScript in `src/tools.ts`, Python in `agent-server/graph.py`) — an accepted "two sources of truth" limitation for this project's scope.
-- `ANTHROPIC_API_KEY` exists in two places on this branch (`server/.env` and `agent-server/.env`) — a deliberate simplicity-over-DRY tradeoff so the Python service is self-contained.
-- Model choice is a cost/speed/reliability tradeoff: `claude-haiku-4-5` has been observed stringifying nested schema fields and skipping required UI steps (see bugs below) that `claude-sonnet-5` did not reproduce.
+- No resumability across a server restart — LangGraph's checkpointer feature would persist `AgentState` across restarts, but the harder unsolved part is re-associating a resumed `thread_id` with a *new* physical WebSocket connection after the browser reconnects, plus non-idempotent tool replay risk (e.g. a "Submit" click firing twice) if a crash happens mid-node. Not implemented — noted here as a real, understood gap, not an oversight.
+- Model choice is a cost/speed/reliability tradeoff: `claude-haiku-4-5` has been observed omitting/stringifying required schema fields that `claude-sonnet-5` did not reproduce in the same testing.
 
 ## Real bugs found during development
 
 1. **`<select>` elements were unsupported** — `inputText` originally rejected any tag other than `input`/`textarea`. Fixed by matching requested text against `<option>` value or label.
-2. **Inputs without a `placeholder`** (using correct `<label for>` instead) **showed up with zero description**, causing real cross-field value drift (an address ending up in the Tax ID field). Fixed by resolving `aria-label` → `label[for]` → wrapping `<label>` before falling back to `textContent`/`placeholder`.
-3. **`LLM.invoke` crashed with an unreadable `TypeError`** when a response had no `tool_use` block (a tight `max_tokens` truncated the response before the tool call completed). Fixed by raising `max_tokens` and throwing a descriptive error instead of crashing on `undefined.input`.
-4. **Button-grid UIs (date/time pickers) got no grouping context** — the agent skipped selecting a date entirely on the appointment scheduler, because nothing told it "this group of buttons is the date picker." Fixed by walking up to the nearest preceding heading/`<legend>` and prepending it to the element's description.
-5. **`AGENT_STEP_TOOL`'s `params` field had no declared sub-schema**, so a model could omit or misname required fields, failing silently as `"No interactive element at index undefined"`. Fixed by explicitly declaring `index`/`text`/`down`/`success` with descriptions.
-6. **A model (observed with `claude-haiku-4-5`) stringified a nested object field** (`action`) instead of honoring the schema's object type, crashing Python with `TypeError: string indices must be integers`. Fixed with defensive `json.loads()` on both `action` and `action.params` if either is a string.
-7. **A real asyncio deadlock in the WebSocket bridge**: awaiting the LangGraph run inline in the same loop that must also read incoming responses caused a total hang after one exchange. DevTools' Network panel still showed the browser's response as "sent" — a reminder that wire-level traffic is not proof the server actually processed it. Fixed by running the graph as a separate `asyncio.create_task`.
-8. **`uvicorn`'s default WebSocket implementation rejected real browser connections** with `SecurityError: line too long` once Chrome's accumulated `localhost` cookie header grew past its internal line-length limit — invisible with a synthetic test client. Fixed by running with `--ws wsproto`.
-9. **A model omitted a required top-level field (`next_goal`) entirely** from its structured output — direct dict subscript (`decision[k]`) crashed with `KeyError` instead of degrading gracefully. Same lesson as bug 6: schema `required` is a strong hint to Anthropic, not a hard guarantee. Fixed with `decision.get(k, "")`.
+2. **Inputs without a `placeholder`** (using correct `<label for>` instead) **showed up with zero description**, causing real cross-field value drift (an address ending up in the Tax ID field). Fixed by resolving `aria-label` → `label[for]` → wrapping `<label>` before falling back to `textContent`/`placeholder`. (This drift is exactly the kind of thing an independent verification layer would have caught mechanically — currently it's only catchable by manually inspecting the page, a real tradeoff of removing that layer, see Known limitations.)
+3. **Button-grid UIs (date/time pickers) got no grouping context** — the agent skipped selecting a date entirely on the appointment scheduler, because nothing told it "this group of buttons is the date picker." Fixed by walking up to the nearest preceding heading/`<legend>` and prepending it to the element's description.
+4. **The tool schema's `params` field had no declared sub-schema**, so a model could omit or misname required fields, failing silently as `"No interactive element at index undefined"`. Fixed by explicitly declaring `index`/`text`/`down`/`success` with descriptions.
+5. **A model (observed with `claude-haiku-4-5`) stringified a nested object field** (`action`) instead of honoring the schema's object type, crashing Python with `TypeError: string indices must be integers`. Fixed with defensive `json.loads()` on both `action` and `action.params` if either is a string.
+6. **A real asyncio deadlock in the WebSocket bridge**: awaiting the LangGraph run inline in the same loop that must also read incoming responses caused a total hang after one exchange. DevTools' Network panel still showed the browser's response as "sent" — a reminder that wire-level traffic is not proof the server actually processed it. Fixed by running the graph as a separate `asyncio.create_task`.
+7. **`uvicorn`'s default WebSocket implementation rejected real browser connections** with `SecurityError: line too long` once Chrome's accumulated `localhost` cookie header grew past its internal line-length limit — invisible with a synthetic test client. Fixed by running with `--ws wsproto`.
+8. **A model omitted a required top-level field (`next_goal`) entirely** from its structured output — direct dict subscript (`decision[k]`) crashed with `KeyError` instead of degrading gracefully. Same lesson as bug 5: schema `required` is a strong hint to Anthropic, not a hard guarantee. Fixed with `decision.get(k, "")`.
 
 All were caught by actually running the agent against the real demo pages, not by code review.
 

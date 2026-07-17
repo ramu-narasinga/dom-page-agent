@@ -5,22 +5,13 @@
   "scripts": {
     "build": "esbuild src/index.ts --bundle --format=iife --global-name=MiniPageAgentBundle --outfile=dist/mini-page-agent.js",
     "build:watch": "npm run build -- --watch",
-    "proxy": "tsx watch server/index.ts",
     "demo": "npx serve demo-app -l 3000",
     "bundle-host": "npx serve dist -l 8081",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p server/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "devDependencies": {
     "esbuild": "^0.24.0",
     "typescript": "^5.6.0",
-    "tsx": "^4.19.0",
-    "@types/node": "^22.0.0",
-    "@types/express": "^5.0.0",
-    "@types/cors": "^2.8.0"
-  },
-  "dependencies": {
-    "express": "^4.21.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.4.0"
+    "@types/node": "^22.0.0"
   }
 }
