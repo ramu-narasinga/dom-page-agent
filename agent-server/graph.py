@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import operator
 import os
@@ -85,7 +86,7 @@ def build_graph(bridge: BrowserBridge, max_steps: int):
         )
 
         async with httpx.AsyncClient() as client:
-            res = await client.post(
+            request_task = asyncio.create_task(client.post(
                 "https://api.anthropic.com/v1/messages",
                 headers={
                     "content-type": "application/json",
@@ -101,7 +102,14 @@ def build_graph(bridge: BrowserBridge, max_steps: int):
                     "tool_choice": {"type": "tool", "name": "agent_step"},
                 },
                 timeout=60,
-            )
+            ))
+            stop_task = asyncio.create_task(bridge.stop_event.wait())
+            done, pending = await asyncio.wait({request_task, stop_task}, return_when=asyncio.FIRST_COMPLETED)
+            if stop_task in done:
+                request_task.cancel()
+                return {"status": "stopped"}
+            stop_task.cancel()
+            res = request_task.result()
         data = res.json()
         if res.status_code != 200:
             raise RuntimeError(f"Anthropic API error ({res.status_code}): {data}")
@@ -121,16 +129,19 @@ def build_graph(bridge: BrowserBridge, max_steps: int):
         if action["tool_name"] == "done":
             entry = {
                 "type": "step", "stepIndex": state["step_count"],
-                "reflection": {k: decision[k] for k in ("evaluation_previous_goal", "memory", "next_goal")},
+                "reflection": {k: decision.get(k, "") for k in ("evaluation_previous_goal", "memory", "next_goal")},
                 "action": {"name": "done", "input": action["params"], "output": "done"},
             }
             await bridge.send_step_update(entry)
             return {"history": [entry], "step_count": state["step_count"] + 1, "status": "completed"}
 
+        if bridge.stop_event.is_set():
+            return {"status": "stopped"}
+
         result = await bridge.execute_tool(action["tool_name"], action["params"])
         entry = {
             "type": "step", "stepIndex": state["step_count"],
-            "reflection": {k: decision[k] for k in ("evaluation_previous_goal", "memory", "next_goal")},
+            "reflection": {k: decision.get(k, "") for k in ("evaluation_previous_goal", "memory", "next_goal")},
             "action": {"name": action["tool_name"], "input": action["params"], "output": result.get("message", "")},
         }
         await bridge.send_step_update(entry)
