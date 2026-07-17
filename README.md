@@ -1,6 +1,6 @@
 # dom-page-agent
 
-A from-scratch, simplified clone of [alibaba/page-agent](https://github.com/alibaba/page-agent) — an agent that lives inside a webpage and drives it via natural language, using a text-based index of interactive elements instead of screenshots. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open. The multi-step agent loop is driven by **LangGraph** in a Python server, reached over a WebSocket bridge from the browser.
+A page agent that lives inside a webpage and drives it via natural language, using a text-based index of interactive elements instead of screenshots. No browser extension, no headless browser: a bookmarklet injects a small bundled script into whatever tab is open. The multi-step agent loop is driven by **LangGraph** in a Python server, reached over a WebSocket bridge from the browser.
 
 ## The problem
 
